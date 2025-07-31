@@ -1,0 +1,63 @@
+{
+  "name": "text-to-sql-powerhouse",
+  "version": "1.0.0",
+  "description": "A powerful text-to-SQL conversion system with AI capabilities",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "node src/seed.js",
+    "dev": "nodemon index.js",
+    "inspect": "node src/syncSchema.js",
+    "start": "node index.js",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky install",
+    "pre-commit": "lint-staged"
+  },
+  "keywords": [
+    "text-to-sql",
+    "ai",
+    "langchain",
+    "postgresql",
+    "express",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+	"dependencies": {
+		"@langchain/google-vertexai": "^0.2.16",
+		"@pinecone-database/pinecone": "^6.1.2",
+		"cors": "^2.8.5",
+		"dotenv": "^17.2.1",
+		"express": "^5.1.0",
+		"langchain": "^0.3.30",
+		"node-cron": "^4.2.1",
+		"pg": "^8.16.3",
+		"winston": "^3.15.0",
+		"winston-daily-rotate-file": "^5.0.0"
+	},
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-node": "^11.1.0",
+    "globals": "^15.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.4.2"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  }
+}
