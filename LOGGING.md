@@ -1,10 +1,12 @@
 # Logging System Documentation
 
-This document describes the comprehensive logging system implemented in the Text-to-SQL Powerhouse project.
+This document describes the comprehensive logging system implemented in the Text-to-SQL Powerhouse
+project.
 
 ## Overview
 
-The logging system uses Winston, a versatile logging library for Node.js, with structured logging, multiple transports, and service-specific loggers.
+The logging system uses Winston, a versatile logging library for Node.js, with structured logging,
+multiple transports, and service-specific loggers.
 
 ## Features
 
@@ -19,24 +21,28 @@ The logging system uses Winston, a versatile logging library for Node.js, with s
 ## Log Levels
 
 ### Error (Level 0)
+
 - **Purpose**: Critical errors that require immediate attention
 - **Usage**: Database connection failures, API errors, validation failures
 - **File**: `logs/error-YYYY-MM-DD.log`
 - **Retention**: 14 days
 
 ### Warn (Level 1)
+
 - **Purpose**: Warning conditions that should be monitored
 - **Usage**: Deprecated API usage, missing optional parameters, performance warnings
 - **File**: `logs/combined-YYYY-MM-DD.log`
 - **Retention**: 30 days
 
 ### Info (Level 2)
+
 - **Purpose**: General operational information
 - **Usage**: Server startup, request completion, job completion
 - **File**: `logs/combined-YYYY-MM-DD.log`
 - **Retention**: 30 days
 
 ### Debug (Level 3)
+
 - **Purpose**: Detailed information for debugging
 - **Usage**: Function entry/exit, variable values, detailed flow
 - **File**: `logs/debug-YYYY-MM-DD.log` (development only)
@@ -69,25 +75,25 @@ import logger from './src/config/logger.js';
 logger.error('Database connection failed', {
   error: error.message,
   host: 'localhost',
-  port: 5432
+  port: 5432,
 });
 
 // Warning logging
 logger.warn('API rate limit approaching', {
   currentRequests: 95,
-  limit: 100
+  limit: 100,
 });
 
 // Info logging
 logger.info('Server started successfully', {
   port: 3001,
-  environment: 'development'
+  environment: 'development',
 });
 
 // Debug logging
 logger.debug('Processing user request', {
   userId: 123,
-  action: 'getData'
+  action: 'getData',
 });
 ```
 
@@ -99,7 +105,7 @@ import { createServiceLogger } from './src/config/logger.js';
 const sqlLogger = createServiceLogger('SQL_GENERATOR');
 
 sqlLogger.info('Starting SQL generation', {
-  questionLength: question.length
+  questionLength: question.length,
 });
 ```
 
@@ -126,6 +132,7 @@ app.use(requestLogger);
 ```
 
 **Logged Information:**
+
 - Request method, URL, user agent, IP
 - Response status code, duration
 - Automatic service tagging as 'HTTP'
@@ -165,6 +172,7 @@ logs/
 ## Log Format
 
 ### Console Output (Development)
+
 ```
 2025-01-31 18:22:15 info [API]: SQL generation request received {
   "question": "Show me all leads created in the last 30 days...",
@@ -173,6 +181,7 @@ logs/
 ```
 
 ### File Output (JSON)
+
 ```json
 {
   "timestamp": "2025-01-31 18:22:15",
@@ -187,6 +196,7 @@ logs/
 ## Best Practices
 
 ### 1. Use Appropriate Log Levels
+
 ```javascript
 // ✅ Good
 logger.error('Database connection failed', { error: err.message });
@@ -199,13 +209,14 @@ logger.debug('Server started'); // Should be info
 ```
 
 ### 2. Include Relevant Context
+
 ```javascript
 // ✅ Good
 logger.info('SQL generation completed', {
   questionLength: question.length,
   sqlLength: result.length,
   duration: '1.2s',
-  tablesUsed: ['users', 'orders']
+  tablesUsed: ['users', 'orders'],
 });
 
 // ❌ Avoid
@@ -213,11 +224,12 @@ logger.info('SQL generation completed');
 ```
 
 ### 3. Use Service Tags
+
 ```javascript
 // ✅ Good
 logger.info('Processing payment', {
   amount: 100,
-  service: 'PAYMENT_SERVICE'
+  service: 'PAYMENT_SERVICE',
 });
 
 // ✅ Also good
@@ -226,28 +238,31 @@ paymentLogger.info('Processing payment', { amount: 100 });
 ```
 
 ### 4. Sanitize Sensitive Data
+
 ```javascript
 // ✅ Good
 logger.info('User authentication', {
   userId: user.id,
-  email: user.email.replace(/(.{2}).*(@.*)/, '$1***$2')
+  email: user.email.replace(/(.{2}).*(@.*)/, '$1***$2'),
 });
 
 // ❌ Avoid
 logger.info('User authentication', {
   password: user.password, // Never log passwords
-  creditCard: user.creditCard // Never log sensitive data
+  creditCard: user.creditCard, // Never log sensitive data
 });
 ```
 
 ## Monitoring and Alerts
 
 ### Log Analysis
+
 - Use log aggregation tools (ELK Stack, Splunk, etc.)
 - Set up alerts for error patterns
 - Monitor log volume and patterns
 
 ### Key Metrics to Monitor
+
 - Error rate by service
 - Response time trends
 - Failed SQL generations
@@ -291,18 +306,21 @@ grep "SQL_GENERATOR" logs/combined-$(date +%Y-%m-%d).log
 ## Production Considerations
 
 ### Recommended Settings
+
 ```env
 LOG_LEVEL=warn          # Reduce log volume
 NODE_ENV=production     # Disables debug file logging
 ```
 
 ### Security
+
 - Ensure log files are not publicly accessible
 - Implement log rotation to prevent disk space issues
 - Consider encrypting sensitive log data
 - Set up proper file permissions (600 or 640)
 
 ### Performance
+
 - Monitor disk I/O impact
 - Use log aggregation services for centralized logging
 - Consider async logging for high-throughput applications
@@ -310,6 +328,7 @@ NODE_ENV=production     # Disables debug file logging
 ## Integration Examples
 
 ### Database Operations
+
 ```javascript
 const dbLogger = createServiceLogger('DATABASE');
 
@@ -318,40 +337,42 @@ try {
   const result = await db.query(query);
   dbLogger.info('Query executed successfully', {
     rowCount: result.rows.length,
-    duration: '45ms'
+    duration: '45ms',
   });
 } catch (error) {
   dbLogger.error('Query execution failed', {
     error: error.message,
-    sql: query.substring(0, 100)
+    sql: query.substring(0, 100),
   });
 }
 ```
 
 ### API Endpoints
+
 ```javascript
 router.post('/api/endpoint', async (req, res) => {
   const apiLogger = createServiceLogger('API');
 
   apiLogger.info('API request received', {
     endpoint: '/api/endpoint',
-    bodySize: JSON.stringify(req.body).length
+    bodySize: JSON.stringify(req.body).length,
   });
 
   try {
     const result = await processRequest(req.body);
     apiLogger.info('API request completed', {
-      resultSize: JSON.stringify(result).length
+      resultSize: JSON.stringify(result).length,
     });
     res.json(result);
   } catch (error) {
     apiLogger.error('API request failed', {
       error: error.message,
-      endpoint: '/api/endpoint'
+      endpoint: '/api/endpoint',
     });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 ```
 
-This logging system provides comprehensive observability into your application's behavior, making debugging, monitoring, and maintenance much more effective.
+This logging system provides comprehensive observability into your application's behavior, making
+debugging, monitoring, and maintenance much more effective.

@@ -9,7 +9,7 @@ router.post('/generate-sql', async (req, res) => {
   const { question } = req.body;
 
   logger.info('SQL generation request received', {
-    question: question ? `${question.substring(0, 100)  }...` : 'undefined',
+    question: question ? `${question.substring(0, 100)}...` : 'undefined',
     service: 'API',
   });
 
@@ -36,7 +36,7 @@ router.post('/generate-sql', async (req, res) => {
     logger.error('Error in generate-sql route', {
       error: error.message,
       stack: error.stack,
-      question: `${question.substring(0, 100)  }...`,
+      question: `${question.substring(0, 100)}...`,
       service: 'API',
     });
     res.status(500).json({ error: 'Failed to generate SQL query.' });

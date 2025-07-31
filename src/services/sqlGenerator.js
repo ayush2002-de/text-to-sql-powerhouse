@@ -47,7 +47,7 @@ const validateSqlSyntax = async sqlQuery => {
   } catch (error) {
     logger.error('SQL validation failed', {
       error: error.message,
-      sqlQuery: `${sqlQuery.substring(0, 100)  }...`,
+      sqlQuery: `${sqlQuery.substring(0, 100)}...`,
       service: 'SQL_GENERATOR',
     });
     return { isValid: false, error: error.message };
@@ -68,7 +68,9 @@ export const generateSqlFromQuestion = async question => {
   const questionEmbedding = await embeddings.embedQuery(question);
 
   // STEP B (Retrieve): Query Pinecone to get the Top-N relevant tables
-  logger.debug('Retrieving relevant tables from Pinecone', { service: 'SQL_GENERATOR' });
+  logger.debug('Retrieving relevant tables from Pinecone', {
+    service: 'SQL_GENERATOR',
+  });
   const queryResults = await pineconeIndex.query({
     topK: 5, // Get the top 5 most similar table summaries
     vector: questionEmbedding,
@@ -111,46 +113,89 @@ export const generateSqlFromQuestion = async question => {
     .join('\n\n');
 
   const finalPrompt = `
-        You are an expert PrestoSQL writer. Your task is to write a single, correct, and efficient PrestoSQL query to answer the user's question using ONLY the provided table schemas.
+        You are a SQL expert that can help generating SQL query.
 
-        CRITICAL RULE: You MUST wrap all table and column names in double quotes (") to preserve their exact case. For example, a query involving the 'users' table and the 'createdAt' column should be written as SELECT "createdAt" FROM "users".
+        Please help to generate a new SQL query based on the following question. Your response should ONLY be based on the given context.
 
-        User Question: "${question}"
+        Please always follow the key/value pair format below for your response:
+        ===Response Format
+        <@query@>
+        query
 
-        Table Schemas:
-        ---
+        or
+
+        <@explanation@>
+        explanation
+
+        ===Response Guidelines
+        1. The response must always start with <@query@> or <@explanation@>.
+        2. If the provided context is sufficient, respond only with a valid SQL query inside the <@query@> section.
+        3. CRITICAL RULE: You MUST wrap all table and column names in double quotes (") to preserve their exact case.
+        4. If the provided context is insufficient, please explain what information is missing in the <@explanation@> section.
+
+
+        ===SQL Dialect
+        PrestoSQL
+
+        ===Tables
         ${finalTableSchemas}
-        ---
 
-        Write the SQL query. Output ONLY the SQL code, with no explanation or surrounding text.
-    `;
+        ===Question
+        ${question}
+        `;
+
   const finalResponse = await llm.invoke(finalPrompt);
 
-  // Clean up the response to ensure it's just SQL
-  const sqlQuery = finalResponse.replace(/```sql|```/g, '').trim();
-  logger.info('SQL generation completed', {
-    sqlLength: sqlQuery.length,
-    service: 'SQL_GENERATOR',
-  });
-  logger.debug('Generated SQL query', {
-    sql: sqlQuery,
-    service: 'SQL_GENERATOR',
-  });
+  // --- NEW RESPONSE PARSING LOGIC ---
+  const queryMatch = finalResponse.match(/<@query@>([\s\S]*)/);
+  const explanationMatch = finalResponse.match(/<@explanation@>([\s\S]*)/);
 
-  const validationResult = await validateSqlSyntax(sqlQuery);
+  if (queryMatch && queryMatch[1]) {
+    // SUCCESS PATH: A query was found.
+    const sqlQuery = queryMatch[1].trim();
 
-  if (!validationResult.isValid) {
-    logger.error('Generated SQL failed validation', {
-      error: validationResult.error,
-      sql: `${sqlQuery.substring(0, 100)  }...`,
+    // Your existing logging and validation logic fits perfectly here.
+    logger.info('SQL generation completed', {
+      sqlLength: sqlQuery.length,
       service: 'SQL_GENERATOR',
     });
-    // If the SQL is invalid, we throw an error instead of returning it.
-    throw new Error(`Generated SQL is invalid: ${validationResult.error}`);
-  }
+    logger.debug('Generated SQL query', {
+      sql: sqlQuery,
+      service: 'SQL_GENERATOR',
+    });
 
-  logger.info('SQL validation passed successfully', {
-    service: 'SQL_GENERATOR',
-  });
-  return sqlQuery;
+    const validationResult = await validateSqlSyntax(sqlQuery);
+
+    if (!validationResult.isValid) {
+      logger.error('Generated SQL failed validation', {
+        error: validationResult.error,
+        sql: `${sqlQuery.substring(0, 100)}...`,
+        service: 'SQL_GENERATOR',
+      });
+      // If the SQL is invalid, we throw an error instead of returning it.
+      throw new Error(`Generated SQL is invalid: ${validationResult.error}`);
+    }
+
+    logger.info('SQL validation passed successfully', {
+      service: 'SQL_GENERATOR',
+    });
+    return sqlQuery;
+  } else if (explanationMatch && explanationMatch[1]) {
+    // FAILURE PATH 1: LLM provided an explanation.
+    const explanation = explanationMatch[1].trim();
+    logger.error('LLM could not generate query, provided explanation', {
+      explanation,
+      service: 'SQL_GENERATOR',
+    });
+    throw new Error(`LLM explanation: ${explanation}`);
+  } else {
+    // FAILURE PATH 2: LLM did not follow the format.
+    logger.error('Invalid response format from LLM', {
+      response: finalResponse,
+      service: 'SQL_GENERATOR',
+    });
+    throw new Error(
+      'Invalid response format from LLM. No <@query@> or <@explanation@> tag found.',
+    );
+  }
 };

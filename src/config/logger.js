@@ -33,7 +33,9 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, service, ...meta }) => {
-    const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
+    const metaStr = Object.keys(meta).length
+      ? JSON.stringify(meta, null, 2)
+      : '';
     const serviceStr = service ? `[${service}]` : '';
     return `${timestamp} ${level} ${serviceStr}: ${message} ${metaStr}`;
   }),
