@@ -2,7 +2,6 @@ import 'dotenv/config';
 import { VertexAI, VertexAIEmbeddings } from '@langchain/google-vertexai';
 import { Pinecone } from '@pinecone-database/pinecone';
 import dbPool from '../config/db.js';
-import cron from 'node-cron';
 import logger from '../config/logger.js';
 import { readFile } from 'fs/promises';
 import path from 'path';
@@ -13,7 +12,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Go up one level to the parent, then into `content/`
-const jsonPath = path.join(__dirname, '..', 'content', 'table-standard.json');
+const jsonPath = path.join(
+  __dirname,
+  '..',
+  '..',
+  'content',
+  'table-standard.json',
+);
 
 // --- CLIENT SETUPS ---
 const llm = new VertexAI({ model: 'claude-sonnet-4@20250514', temperature: 0 });
@@ -116,7 +121,7 @@ const upsertToPinecone = async enrichedTables => {
 };
 
 // --- MAIN JOB ORCHESTRATOR ---
-const runSyncJob = async () => {
+export const runSchemaSync = async () => {
   logger.info('Starting database schema sync job', {
     service: 'SCHEMA_SYNC',
   });
@@ -158,20 +163,3 @@ const runSyncJob = async () => {
     });
   }
 };
-
-// --- SCHEDULER ---
-// This schedule runs the job at 2:00 AM every day.
-// Syntax: (minute hour day-of-month month day-of-week)
-cron.schedule('0 2 * * *', runSyncJob, {
-  scheduled: true,
-  timezone: 'Asia/Kolkata', // Set to your server's timezone
-});
-
-logger.info('Schema synchronization service started', {
-  schedule: '0 2 * * *',
-  timezone: 'Asia/Kolkata',
-  service: 'SCHEMA_SYNC',
-});
-
-// To test immediately, you can uncomment the line below:
-runSyncJob();
