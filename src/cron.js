@@ -22,5 +22,3 @@ logger.info('Synchronization service started', {
   timezone: 'Asia/Kolkata',
   service: 'SCHEMA_SYNC',
 });
-
-runQueryLogSync();
