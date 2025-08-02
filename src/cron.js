@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { runQueryLogSync } from './scheduler/sync-query-logs.js';
+import { runQueryLogSync } from './scheduler/syncQueryLogs.js';
 import { runSchemaSync } from './scheduler/syncSchema.js';
 import { createServiceLogger } from './config/logger.js';
 
@@ -22,5 +22,3 @@ logger.info('Synchronization service started', {
   timezone: 'Asia/Kolkata',
   service: 'SCHEMA_SYNC',
 });
-
-runQueryLogSync();

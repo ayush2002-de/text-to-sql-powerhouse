@@ -5,7 +5,6 @@ import dbPool from '../config/db.js';
 import logger from '../config/logger.js';
 
 // --- INITIALIZE CLIENTS ---
-// We initialize these once when the server starts, not on every request.
 const pinecone = new Pinecone();
 
 const embeddings = new VertexAIEmbeddings({
@@ -18,6 +17,11 @@ const llm = new VertexAI({
 });
 
 const validateSqlSyntax = async sqlQuery => {
+  logger.debug('Starting SQL syntax validation', {
+    queryLength: sqlQuery.length,
+    service: 'SQL_GENERATOR',
+  });
+
   const normalizedSql = sqlQuery.toLowerCase();
   const forbiddenKeywords = [
     'insert',
@@ -30,9 +34,16 @@ const validateSqlSyntax = async sqlQuery => {
     'grant',
     'revoke',
   ];
-  if (
-    forbiddenKeywords.some(keyword => normalizedSql.includes(` ${keyword} `))
-  ) {
+
+  const foundForbiddenKeyword = forbiddenKeywords.find(keyword =>
+    normalizedSql.includes(` ${keyword} `),
+  );
+
+  if (foundForbiddenKeyword) {
+    logger.warn('SQL validation failed - forbidden keyword detected', {
+      forbiddenKeyword: foundForbiddenKeyword,
+      service: 'SQL_GENERATOR',
+    });
     return {
       isValid: false,
       error: 'Query contains a forbidden write-operation keyword.',
@@ -41,7 +52,13 @@ const validateSqlSyntax = async sqlQuery => {
 
   const client = await dbPool.connect();
   try {
+    logger.debug('Executing EXPLAIN query for validation', {
+      service: 'SQL_GENERATOR',
+    });
     await client.query(`EXPLAIN ${sqlQuery}`);
+    logger.info('SQL validation passed', {
+      service: 'SQL_GENERATOR',
+    });
     return { isValid: true };
   } catch (error) {
     logger.error('SQL validation failed', {
@@ -55,18 +72,21 @@ const validateSqlSyntax = async sqlQuery => {
   }
 };
 
-// --- THE MAIN FUNCTION ---
-export const generateSqlFromQuestion = async question => {
-  logger.info('Starting SQL generation with re-rank step', {
-    questionLength: question.length,
+const retrieveContext = async question => {
+  logger.debug('Starting context retrieval process', {
+    question: question.substring(0, 100) + (question.length > 100 ? '...' : ''),
     service: 'SQL_GENERATOR',
   });
 
-  // --- Step 1: Embed question and retrieve from both indexes ---
+  logger.debug('Generating question embedding', { service: 'SQL_GENERATOR' });
   const questionEmbedding = await embeddings.embedQuery(question);
+
   const tableIndex = pinecone.index(process.env.PINECONE_INDEX_NAME);
   const queryIndex = pinecone.index(process.env.PINECONE_QUERY_INDEX_NAME);
 
+  logger.debug('Querying Pinecone indexes for relevant context', {
+    service: 'SQL_GENERATOR',
+  });
   const [tableResults, queryResults] = await Promise.all([
     tableIndex.query({
       topK: 5,
@@ -88,117 +108,153 @@ export const generateSqlFromQuestion = async question => {
   logger.info('Retrieved context from Pinecone', {
     tableCount: relevantTables.length,
     exampleQueryCount: relevantExampleQueries.length,
-  });
-
-  // --- Step 2 : Re-rank tables using all available context ---
-  logger.debug('Re-ranking tables with LLM using tables and example queries', {
+    tableNames: relevantTables.map(t => t.name),
     service: 'SQL_GENERATOR',
   });
-  const rerankPrompt = `
-        Your primary task is to select the most relevant table(s) to answer the user's question. Make your decision by analyzing the "Available Tables" and their summaries.
+  return { relevantTables, relevantExampleQueries };
+};
 
-        You can use the "Example Queries" as a secondary source of context to help understand how tables are typically joined, but your main decision should be based on the user's question and the table descriptions. Prioritize 'Gold' tier tables.
+export const buildCombinedPrompt = (
+  question,
+  relevantTables,
+  relevantExampleQueries,
+) => `
+    You are an expert SQL writer. Your task is to write a single, correct SQL query to answer the user's question by analyzing the provided context.
+    First, select the most appropriate table(s) from the 'Table Schemas' list. Then, generate the query.
 
-        User Question: "${question}"
+    ===Rules for Table Selection
+    1. Use the 'tier' as a strong indicator of table quality. The priority is: Gold > Silver > Bronze > Iron.
+    2. Avoid 'Iron' tier tables if a better alternative exists.
 
-        Available Tables:
-        ${JSON.stringify(relevantTables, null, 2)}
+    ===Rules for SQL Generation
+    1. Your response must start with <@query@> or <@explanation@>.
+    2. Respond only with a valid SQL query inside the <@query@> section.
+    3. CRITICAL RULE: Wrap all table and column names in double quotes (").
+    4. If the context is insufficient, explain what is missing in the <@explanation@> section.
 
-        Example Queries (for secondary context):
-        ${JSON.stringify(relevantExampleQueries, null, 2)}
+    ===SQL Dialect
+    PrestoSQL
 
-        Return ONLY a comma-separated list of the best table names.
-        `;
-  const rerankResponse = await llm.invoke(rerankPrompt);
-  const topTableNames = rerankResponse.split(',').map(t => t.trim());
+    ===Table Schemas
+    ${JSON.stringify(relevantTables, null, 2)}
 
-  logger.info('LLM re-ranked and selected tables for SQL generation', {
-    selectedTables: topTableNames,
+    ===Example Queries (for inspiration)
+    ${JSON.stringify(relevantExampleQueries, null, 2)}
+
+    ===Question
+    ${question}
+  `;
+
+const parseAndValidateResponse = async response => {
+  logger.debug('Starting response parsing and validation', {
+    responseLength: response.length,
+    service: 'SQL_GENERATOR',
   });
 
-  // --- Step 3: Generate SQL with focused context ---
-  logger.debug('Generating final SQL query', { service: 'SQL_GENERATOR' });
-  const finalTableSchemas = relevantTables
-    .filter(t => topTableNames.includes(t.name))
-    .map(t => `Table Name: ${t.name}\nColumns: ${t.schema}`)
-    .join('\n\n');
+  let sqlQuery = response;
+  while (sqlQuery.includes('<@query@>')) {
+    sqlQuery = sqlQuery.replace(/<@query@>/g, '').replace(/<\/@query@>/g, '');
+  }
+  sqlQuery = response.match(/<@query@>([\s\S]*?)<\/@query@>/) ? sqlQuery : '';
 
-  const finalPrompt = `
-        You are an expert SQL writer. Your primary task is to write a SQL query to answer the user's question using ONLY the provided "Table Schemas".
-
-        If helpful, you may use the "Example Queries" for inspiration on complex joins or logic, but do not copy them directly if they are not a good fit. Your main focus is the user's question and the provided schemas.
-
-        ===Response Guidelines
-        1. The response must always start with <@query@> or <@explanation@>.
-        2. Respond only with a valid SQL query inside the <@query@> section.
-        3. CRITICAL RULE: You MUST wrap all table and column names in double quotes (").
-        4. If context is insufficient, explain what information is missing in the <@explanation@> section.
-
-        ===SQL Dialect
-        PrestoSQL
-
-        ===Table Schemas
-        ${finalTableSchemas}
-
-        ===Example Queries (for inspiration, if helpful)
-        ${JSON.stringify(relevantExampleQueries, null, 2)}
-
-        ===Question
-        ${question}
-        `;
-
-  const finalResponse = await llm.invoke(finalPrompt);
-
-  // --- Final parsing and validation logic remains the same ---
-  const queryMatch = finalResponse.match(/<@query@>([\s\S]*)/);
-  const explanationMatch = finalResponse.match(/<@explanation@>([\s\S]*)/);
-
-  if (queryMatch && queryMatch[1]) {
-    // SUCCESS PATH: A query was found.
-    const sqlQuery = queryMatch[1].trim();
-
-    // Your existing logging and validation logic fits perfectly here.
-    logger.info('SQL generation completed', {
-      sqlLength: sqlQuery.length,
+  if (!sqlQuery) {
+    logger.warn('No SQL query found in LLM response', {
       service: 'SQL_GENERATOR',
     });
-    logger.debug('Generated SQL query', {
-      sql: sqlQuery,
-      service: 'SQL_GENERATOR',
-    });
-
-    const validationResult = await validateSqlSyntax(sqlQuery);
-
-    if (!validationResult.isValid) {
-      logger.error('Generated SQL failed validation', {
-        error: validationResult.error,
-        sql: `${sqlQuery.substring(0, 100)}...`,
+    const explanationMatch = response.match(/<@explanation@>([\s\S]*)/);
+    if (explanationMatch && explanationMatch[1]) {
+      const explanation = explanationMatch[1].trim();
+      logger.info('LLM provided explanation instead of query', {
+        explanation:
+          explanation.substring(0, 200) +
+          (explanation.length > 200 ? '...' : ''),
         service: 'SQL_GENERATOR',
       });
-      // If the SQL is invalid, we throw an error instead of returning it.
-      throw new Error(`Generated SQL is invalid: ${validationResult.error}`);
+      throw new Error(`LLM explanation: ${explanation}`);
     }
-
-    logger.info('SQL validation passed successfully', {
-      service: 'SQL_GENERATOR',
-    });
-    return sqlQuery;
-  } else if (explanationMatch && explanationMatch[1]) {
-    // FAILURE PATH 1: LLM provided an explanation.
-    const explanation = explanationMatch[1].trim();
-    logger.error('LLM could not generate query, provided explanation', {
-      explanation,
-      service: 'SQL_GENERATOR',
-    });
-    throw new Error(`LLM explanation: ${explanation}`);
-  } else {
-    // FAILURE PATH 2: LLM did not follow the format.
     logger.error('Invalid response format from LLM', {
-      response: finalResponse,
       service: 'SQL_GENERATOR',
     });
-    throw new Error(
-      'Invalid response format from LLM. No <@query@> or <@explanation@> tag found.',
+    throw new Error('Invalid response format from LLM or empty query.');
+  }
+
+  logger.debug('Extracted SQL query from LLM response', {
+    queryLength: sqlQuery.length,
+    service: 'SQL_GENERATOR',
+  });
+
+  const validationResult = await validateSqlSyntax(sqlQuery);
+  if (!validationResult.isValid) {
+    logger.error('Generated SQL failed validation', {
+      error: validationResult.error,
+      service: 'SQL_GENERATOR',
+    });
+    throw new Error(`Generated SQL is invalid: ${validationResult.error}`);
+  }
+
+  logger.info('SQL parsing and validation completed successfully', {
+    finalQueryLength: sqlQuery.length,
+    service: 'SQL_GENERATOR',
+  });
+  return sqlQuery;
+};
+
+// --- MAIN ORCHESTRATOR FUNCTION ---
+
+export const generateSqlFromQuestion = async question => {
+  const startTime = Date.now();
+  logger.info('Starting SQL generation process', {
+    questionLength: question.length,
+    question: question.substring(0, 100) + (question.length > 100 ? '...' : ''),
+    service: 'SQL_GENERATOR',
+  });
+
+  try {
+    const { relevantTables, relevantExampleQueries } =
+      await retrieveContext(question);
+
+    logger.debug('Building combined prompt for LLM', {
+      tableCount: relevantTables.length,
+      exampleQueryCount: relevantExampleQueries.length,
+      service: 'SQL_GENERATOR',
+    });
+
+    const combinedPrompt = buildCombinedPrompt(
+      question,
+      relevantTables,
+      relevantExampleQueries,
     );
+
+    logger.debug('Invoking LLM for SQL generation', {
+      promptLength: combinedPrompt.length,
+      service: 'SQL_GENERATOR',
+    });
+
+    const finalResponse = await llm.invoke(combinedPrompt);
+
+    logger.debug('Received response from LLM', {
+      responseLength: finalResponse.length,
+      service: 'SQL_GENERATOR',
+    });
+
+    const sqlQuery = await parseAndValidateResponse(finalResponse);
+
+    const duration = Date.now() - startTime;
+    logger.info('SQL generation completed successfully', {
+      duration: `${duration}ms`,
+      finalQueryLength: sqlQuery.length,
+      service: 'SQL_GENERATOR',
+    });
+
+    return sqlQuery;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('SQL generation failed', {
+      error: error.message,
+      duration: `${duration}ms`,
+      stack: error.stack,
+      service: 'SQL_GENERATOR',
+    });
+    throw error;
   }
 };

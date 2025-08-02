@@ -12,6 +12,10 @@ LangChain.
 - 📝 Comprehensive table metadata and domain classification
 - 🛡️ Type-safe database operations
 - 🎯 RESTful API design
+- 📋 Comprehensive logging system with Winston
+- ⏰ Automated background jobs and scheduling
+- 🔄 Real-time query log synchronization
+- 📈 Performance monitoring and metrics
 
 ## Tech Stack
 
@@ -126,20 +130,35 @@ Convert natural language questions to SQL queries.
 text-to-sql-powerhouse/
 ├── src/
 │   ├── config/
-│   │   └── db.js              # Database configuration
+│   │   ├── db.js              # Database configuration
+│   │   └── logger.js          # Winston logging configuration
 │   ├── routes/
 │   │   └── api.js             # API route definitions
 │   ├── services/
 │   │   └── sqlGenerator.js    # Core SQL generation logic
-│   ├── seed.js                # Database seeding script
-│   └── syncSchema.js          # Schema synchronization
+│   ├── scheduler/
+│   │   ├── syncSchema.js      # Database schema synchronization
+│   │   └── syncQueryLogs.js   # Query log synchronization
+│   ├── cron.js                # Cron job scheduler
+│   └── seed.js                # Database seeding script
 ├── content/
 │   ├── table-metadata.json    # Comprehensive table metadata
-│   └── table-standard.json    # Table classification standards
+│   ├── table-standard.json    # Table classification standards
+│   ├── table-sql.json         # SQL query examples
+│   └── summaryData.json       # Summary data cache
+├── logs/                      # Log files (auto-generated)
+│   ├── error-YYYY-MM-DD.log   # Error logs
+│   ├── combined-YYYY-MM-DD.log # All logs
+│   └── debug-YYYY-MM-DD.log   # Debug logs (dev only)
+├── .vscode/                   # VSCode workspace settings
+├── .husky/                    # Git hooks
 ├── index.js                   # Application entry point
 ├── package.json               # Project dependencies and scripts
 ├── eslint.config.js           # ESLint configuration
 ├── .prettierrc                # Prettier configuration
+├── LOGGING.md                 # Logging system documentation
+├── DEVELOPMENT_SETUP.md       # Development setup guide
+├── CONTRIBUTING.md            # Contribution guidelines
 └── README.md                  # Project documentation
 ```
 
@@ -222,6 +241,53 @@ Pre-commit hooks are set up to automatically:
 - Add comments for complex logic
 - Ensure all functions have proper error handling
 
+## Logging System
+
+The project includes a comprehensive logging system built with Winston:
+
+### Features
+
+- **Multiple Log Levels**: error, warn, info, debug
+- **File Rotation**: Daily log rotation with compression
+- **Service-Specific Loggers**: Separate loggers for different components
+- **Structured Logging**: JSON format with metadata
+- **Console Output**: Colored console logs for development
+
+### Configuration
+
+```env
+LOG_LEVEL=info          # Minimum log level (error, warn, info, debug)
+NODE_ENV=development    # Environment (affects debug logging)
+```
+
+### Log Files
+
+- `logs/error-YYYY-MM-DD.log` - Error logs only
+- `logs/combined-YYYY-MM-DD.log` - All logs (info, warn, error)
+- `logs/debug-YYYY-MM-DD.log` - Debug logs (development only)
+
+For detailed logging documentation, see [LOGGING.md](./LOGGING.md).
+
+## Background Jobs
+
+The system includes automated background jobs for data synchronization:
+
+### Schema Synchronization
+
+- **Schedule**: Daily at 2:00 AM (Asia/Kolkata)
+- **Purpose**: Sync database schema with Pinecone vector store
+- **Service**: `SCHEMA_SYNC`
+
+### Query Log Synchronization
+
+- **Schedule**: Daily at 2:00 AM (Asia/Kolkata)
+- **Purpose**: Analyze and embed recent SQL queries for better recommendations
+- **Service**: `QueryLogSync`
+
+### Job Management
+
+Jobs are managed using `node-cron` and can be monitored through the logging system.
+
 ## Environment Variables
 
 | Variable                         | Description                 | Required           |
@@ -235,7 +301,9 @@ Pre-commit hooks are set up to automatically:
 | `GOOGLE_CLOUD_PROJECT`           | Google Cloud project ID     | Yes                |
 | `PINECONE_API_KEY`               | Pinecone API key            | Yes                |
 | `PINECONE_INDEX_NAME`            | Pinecone index name         | Yes                |
+| `PINECONE_QUERY_INDEX_NAME`      | Pinecone query index name   | Yes                |
 | `PORT`                           | Server port                 | No (default: 3001) |
+| `LOG_LEVEL`                      | Logging level               | No (default: info) |
 
 ## License
 

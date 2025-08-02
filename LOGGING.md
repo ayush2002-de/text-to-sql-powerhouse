@@ -156,7 +156,9 @@ Each log entry includes a service tag for easy filtering:
 - **API**: API-specific operations
 - **SQL_GENERATOR**: SQL generation process
 - **SCHEMA_SYNC**: Database schema synchronization
+- **QueryLogSync**: Query log synchronization and analysis
 - **DATABASE**: Database operations
+- **CRON**: Scheduled job management
 
 ## File Structure
 

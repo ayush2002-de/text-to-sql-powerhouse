@@ -55,13 +55,24 @@ text-to-sql-powerhouse/
 │   └── pre-commit            # Pre-commit hook script
 ├── src/                      # Source code
 │   ├── config/               # Configuration files
+│   │   ├── db.js            # Database configuration
+│   │   └── logger.js        # Winston logging configuration
 │   ├── routes/               # API routes
 │   ├── services/             # Business logic
-│   ├── seed.js              # Database seeding
-│   └── syncSchema.js        # Schema synchronization
+│   ├── scheduler/            # Background jobs
+│   │   ├── syncSchema.js    # Schema synchronization
+│   │   └── syncQueryLogs.js # Query log synchronization
+│   ├── cron.js              # Cron job scheduler
+│   └── seed.js              # Database seeding
 ├── content/                  # Data files
 │   ├── table-metadata.json  # Comprehensive table metadata
-│   └── table-standard.json  # Table classification standards
+│   ├── table-standard.json  # Table classification standards
+│   ├── table-sql.json       # SQL query examples
+│   └── summaryData.json     # Summary data cache
+├── logs/                    # Log files (auto-generated)
+│   ├── error-YYYY-MM-DD.log # Error logs
+│   ├── combined-YYYY-MM-DD.log # All logs
+│   └── debug-YYYY-MM-DD.log # Debug logs (dev only)
 ├── .env.example             # Environment variables template
 ├── .gitignore              # Git ignore rules
 ├── .prettierrc             # Prettier configuration
@@ -71,6 +82,7 @@ text-to-sql-powerhouse/
 ├── README.md               # Project documentation
 ├── CONTRIBUTING.md         # Contribution guidelines
 ├── CHANGELOG.md            # Version history
+├── LOGGING.md              # Logging system documentation
 └── DEVELOPMENT_SETUP.md    # This file
 ```
 
@@ -199,12 +211,68 @@ text-to-sql-powerhouse/
 - **Console Statements**: 25 warnings (acceptable for logging/debugging)
 - **Await in Loop**: 5 warnings (acceptable for sequential operations)
 
+## 📋 Logging System
+
+### Overview
+
+The project uses Winston for comprehensive logging with:
+
+- Multiple log levels (error, warn, info, debug)
+- Service-specific loggers
+- File rotation and compression
+- Structured JSON logging
+
+### Usage in Development
+
+```javascript
+import { createServiceLogger } from './src/config/logger.js';
+
+const logger = createServiceLogger('MY_SERVICE');
+
+logger.info('Operation started', { userId: 123 });
+logger.error('Operation failed', { error: err.message });
+```
+
+### Environment Configuration
+
+```env
+LOG_LEVEL=debug         # For development (verbose)
+NODE_ENV=development    # Enables debug file logging
+```
+
+### Log Files
+
+- `logs/error-YYYY-MM-DD.log` - Error logs only
+- `logs/combined-YYYY-MM-DD.log` - All logs
+- `logs/debug-YYYY-MM-DD.log` - Debug logs (development only)
+
+For detailed logging documentation, see [LOGGING.md](./LOGGING.md).
+
+## 🔄 Background Jobs
+
+### Scheduler System
+
+The project includes automated background jobs:
+
+- **Schema Sync**: Daily database schema synchronization
+- **Query Log Sync**: Daily query log analysis and embedding
+- **Cron Management**: Centralized job scheduling
+
+### Development Testing
+
+```bash
+# Test individual sync jobs
+node -e "import('./src/scheduler/syncSchema.js').then(m => m.runSchemaSync())"
+node -e "import('./src/scheduler/syncQueryLogs.js').then(m => m.runQueryLogSync())"
+```
+
 ## 📚 Additional Resources
 
 - [ESLint Documentation](https://eslint.org/docs/)
 - [Prettier Documentation](https://prettier.io/docs/)
 - [Husky Documentation](https://typicode.github.io/husky/)
 - [VSCode Settings Reference](https://code.visualstudio.com/docs/getstarted/settings)
+- [Winston Logging Documentation](https://github.com/winstonjs/winston)
 
 ## 🤝 Contributing
 
